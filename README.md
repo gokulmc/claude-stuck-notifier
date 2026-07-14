@@ -47,6 +47,30 @@ the real question text.
 
 ---
 
+## Clickable upgrade: Nudge (menu-bar app)
+
+The shell tool's `osascript` banners are **informational** — macOS no longer lets
+them be clickable (the deprecated `NSUserNotification` API doesn't route clicks on
+modern macOS). If you want banners you can **click to jump straight to the waiting
+VS Code window**, install the companion menu-bar app in [`app/`](app/) — **Nudge**.
+It uses the modern `UNUserNotificationCenter` API (which *does* deliver clicks) and
+lists every waiting Claude window in the menu bar.
+
+<p align="center">
+  <img src="assets/nudge-menu.svg" alt="Nudge menu bar dropdown listing waiting Claude windows" width="600">
+</p>
+
+```bash
+cd app && ./install.sh
+```
+
+Once installed, `notify-stuck.sh` auto-detects it and routes banners through Nudge
+(coral spark icon, click-to-focus); otherwise it falls back to the plain
+`osascript` banner. See [`app/README.md`](app/README.md) for details, build notes,
+and the macOS focus limits (window-level, not exact-tab).
+
+---
+
 ## How it works
 
 Claude Code emits [hook events](https://code.claude.com/docs/en/hooks) at

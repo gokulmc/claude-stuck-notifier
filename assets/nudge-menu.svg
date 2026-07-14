@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EDEDF1"/>
+      <stop offset="1" stop-color="#E2E2E8"/>
+    </linearGradient>
+    <filter id="menuShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#1D1D1F" flood-opacity="0.20"/>
+    </filter>
+  </defs>
+
+  <rect width="720" height="380" fill="url(#desk)"/>
+
+  <!-- menu bar -->
+  <rect x="0" y="0" width="720" height="30" fill="#FFFFFF" opacity="0.72"/>
+  <!-- status item: spark + count, highlighted (menu open) -->
+  <rect x="548" y="2" width="54" height="26" rx="6" fill="#0A82FF"/>
+  <g stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" transform="translate(565,15)">
+    <line x1="0" y1="-7" x2="0" y2="7"/><line x1="-7" y1="0" x2="7" y2="0"/>
+    <line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>
+  </g>
+  <text x="582" y="19" fill="#FFFFFF" font-size="13" font-weight="600">2</text>
+  <text x="694" y="19" fill="#3A3A3C" font-size="13" text-anchor="end">Fri  2:41 PM</text>
+
+  <!-- dropdown menu -->
+  <g transform="translate(360,34)" filter="url(#menuShadow)">
+    <rect width="344" height="222" rx="12" fill="#FFFFFF"/>
+    <!-- header (disabled) -->
+    <text x="16" y="30" fill="#9B9B9F" font-size="13" font-weight="600">2 waiting</text>
+    <line x1="10" y1="44" x2="334" y2="44" stroke="#ECECEE"/>
+    <!-- item 1 (highlighted) -->
+    <rect x="6" y="52" width="332" height="34" rx="7" fill="#0A82FF"/>
+    <text x="16" y="74" fill="#FFFFFF" font-size="13.5">claude-stuck-notifier — Which database…</text>
+    <!-- item 2 -->
+    <text x="16" y="112" fill="#1D1D1F" font-size="13.5">lendtrack — Needs permission to run Bash</text>
+    <line x1="10" y1="128" x2="334" y2="128" stroke="#ECECEE"/>
+    <!-- clear all -->
+    <text x="16" y="152" fill="#1D1D1F" font-size="13.5">Clear all</text>
+    <line x1="10" y1="166" x2="334" y2="166" stroke="#ECECEE"/>
+    <!-- quit -->
+    <text x="16" y="192" fill="#1D1D1F" font-size="13.5">Quit Nudge</text>
+    <text x="328" y="192" fill="#9B9B9F" font-size="13.5" text-anchor="end">⌘Q</text>
+  </g>
+</svg>
