@@ -27,9 +27,15 @@ callback is dead.)
 - De-dupes by project, `Clear all`, `Quit`, and a "notifications disabled → open
   Settings" shortcut if permission was denied.
 
-Focus is **window-level**: it lands you on the correct project window. macOS
-exposes no way to select a specific editor *tab*, and multiple Claude sessions in
-one window can't be told apart.
+Focus is **window-level**, and depends on whether the session has a folder:
+
+| Session | Result on click |
+|---------|-----------------|
+| Has a project folder | `code <folder>` focuses that exact window — even with many windows open |
+| Folder-less (launched from home / no workspace) | just brings VS Code to the front; there's no folder to target |
+| Several folder-less windows at once | can't be told apart (identical empty titles) — best effort is fronting VS Code |
+
+macOS also exposes no way to select a specific editor *tab* within a window.
 
 ## Build & install
 

@@ -99,7 +99,13 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
     // MARK: - Focus the right VS Code window
     private func focusVSCode(cwd: String) {
         let ws = NSWorkspace.shared
-        if !cwd.isEmpty, let appURL = ws.urlForApplication(withBundleIdentifier: vsID) {
+
+        // Only run `code <cwd>` for a real project folder. For a folder-less
+        // session cwd is the home dir (or empty/root); running `code ~` would
+        // wrongly open home as a workspace, so we just bring VS Code forward.
+        let home = NSHomeDirectory()
+        let isProject = !cwd.isEmpty && cwd != home && cwd != "/"
+        if isProject, let appURL = ws.urlForApplication(withBundleIdentifier: vsID) {
             let cli = appURL.appendingPathComponent("Contents/Resources/app/bin/code")
             if FileManager.default.fileExists(atPath: cli.path) {
                 let p = Process()
@@ -108,6 +114,9 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
                 try? p.run()
             }
         }
+
+        // Always bring VS Code to the front — this is the only action for a
+        // folder-less session, and a backstop otherwise.
         if let vs = NSRunningApplication.runningApplications(withBundleIdentifier: vsID).first {
             vs.activate()
         } else if let appURL = ws.urlForApplication(withBundleIdentifier: vsID) {

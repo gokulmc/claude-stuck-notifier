@@ -16,6 +16,8 @@ msg=$(printf '%s' "$input" | jq -r '.message // ""')
 dir=$(printf '%s' "$input" | jq -r '.cwd // ""')
 [ -z "$dir" ] && dir="$PWD"
 proj=$(basename "$dir")
+# Folder-less session (Claude launched from home / no workspace): label it clearly.
+[ "$dir" = "$HOME" ] && proj="(no folder)"
 
 if [ -z "$msg" ]; then
   if [ "$tool" = "AskUserQuestion" ]; then
