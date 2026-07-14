@@ -10,6 +10,7 @@ set -euo pipefail
 REPO_RAW="https://raw.githubusercontent.com/gokulmc/claude-stuck-notifier/main"
 CLAUDE_DIR="$HOME/.claude"
 HOOK_DEST="$CLAUDE_DIR/hooks/notify-stuck.sh"
+CLEAR_DEST="$CLAUDE_DIR/hooks/nudge-clear.sh"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
 # 1. Guards -----------------------------------------------------------------
@@ -31,10 +32,12 @@ mkdir -p "$CLAUDE_DIR/hooks"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
 if [ -n "$SRC_DIR" ] && [ -f "$SRC_DIR/hooks/notify-stuck.sh" ]; then
   cp "$SRC_DIR/hooks/notify-stuck.sh" "$HOOK_DEST"          # local clone
+  cp "$SRC_DIR/hooks/nudge-clear.sh"  "$CLEAR_DEST"
 else
   curl -fsSL "$REPO_RAW/hooks/notify-stuck.sh" -o "$HOOK_DEST"  # piped via curl
+  curl -fsSL "$REPO_RAW/hooks/nudge-clear.sh"  -o "$CLEAR_DEST"
 fi
-chmod +x "$HOOK_DEST"
+chmod +x "$HOOK_DEST" "$CLEAR_DEST"
 
 # 3. Ensure settings.json exists -------------------------------------------
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
@@ -45,7 +48,7 @@ cp "$SETTINGS" "$BACKUP"
 
 # 5. Idempotent, non-destructive merge -------------------------------------
 tmp="$(mktemp)"
-jq --arg cmd "$HOOK_DEST" '
+jq --arg cmd "$HOOK_DEST" --arg clr "$CLEAR_DEST" '
   .hooks //= {}
   | .hooks.Notification = ((.hooks.Notification // [])
       | if any(.[]?; (.hooks // [])[]?.command == $cmd) then .
@@ -53,6 +56,9 @@ jq --arg cmd "$HOOK_DEST" '
   | .hooks.PreToolUse = ((.hooks.PreToolUse // [])
       | if any(.[]?; (.hooks // [])[]?.command == $cmd) then .
         else . + [{matcher:"AskUserQuestion", hooks:[{type:"command", command:$cmd}]}] end)
+  | .hooks.PostToolUse = ((.hooks.PostToolUse // [])
+      | if any(.[]?; (.hooks // [])[]?.command == $clr) then .
+        else . + [{matcher:"AskUserQuestion", hooks:[{type:"command", command:$clr}]}] end)
 ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
 
 # 6. Done -------------------------------------------------------------------

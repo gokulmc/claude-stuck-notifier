@@ -24,8 +24,9 @@ callback is dead.)
   the question / permission message as body).
 - **Click the banner or a menu item** → runs VS Code's bundled `code <cwd>` to
   focus that project's window and fronts VS Code.
-- De-dupes by project, `Clear all`, `Quit`, and a "notifications disabled → open
-  Settings" shortcut if permission was denied.
+- Entries **auto-clear** when you answer a question (a `PostToolUse` hook) or
+  after 20 min; de-dupes by project; plus `Clear all`, `Quit`, and a
+  "notifications disabled → open Settings" shortcut if permission was denied.
 
 Focus is **window-level**, and depends on whether the session has a folder:
 

@@ -6,7 +6,7 @@ import UserNotifications
 
 final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
 
-    struct Waiting { let id: String; let subtitle: String; let message: String; let cwd: String }
+    struct Waiting { let id: String; let subtitle: String; let message: String; let cwd: String; let added: Date }
 
     private var statusItem: NSStatusItem!
     private var waiting: [Waiting] = []
@@ -14,16 +14,24 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
     private var authDenied = false
 
     private let vsID = "com.microsoft.VSCode"
+    private let staleAfter: TimeInterval = 20 * 60   // auto-drop entries older than 20 min
 
     // MARK: - Lifecycle
     func applicationDidFinishLaunching(_ note: Notification) {
-        // Single instance: if another Nudge is already running (e.g. LaunchAgent +
-        // manual open), bow out so we don't get duplicate menu-bar icons.
+        // Single instance. The LaunchAgent launches Nudge with "--agent" and is
+        // authoritative: it clears any stray instances and stays. A stray (e.g.
+        // spawned by `open nudge://` before the agent was up) defers to whatever
+        // is already running, so we never leave an unmanaged instance.
+        let isAgent = CommandLine.arguments.contains("--agent")
         let mePID = NSRunningApplication.current.processIdentifier
-        let dupes = NSRunningApplication
+        let others = NSRunningApplication
             .runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.gokulmc.nudge")
             .filter { $0.processIdentifier != mePID }
-        if !dupes.isEmpty { NSApp.terminate(nil); return }
+        if isAgent {
+            others.forEach { $0.terminate() }
+        } else if !others.isEmpty {
+            NSApp.terminate(nil); return
+        }
 
         NSApp.setActivationPolicy(.accessory) // menu-bar only (also LSUIElement in Info.plist)
         center.delegate = self
@@ -41,6 +49,11 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
             b.imagePosition = .imageLeading
         }
         rebuildMenu()
+
+        // Safety-net sweep: drop entries the user never cleared and that are old.
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.sweepStale()
+        }
     }
 
     // MARK: - URL scheme (modern delegate, no Carbon)
@@ -49,21 +62,27 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
     }
 
     private func handle(_ url: URL) {
-        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              comps.host == "notify" else { return }
-        let q = comps.queryItems ?? []
-        func v(_ k: String) -> String { q.first(where: { $0.name == k })?.value ?? "" }
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        func v(_ k: String) -> String { comps.queryItems?.first(where: { $0.name == k })?.value ?? "" }
 
-        let title = v("title").isEmpty ? "Claude Code" : v("title")
-        let subtitle = v("subtitle")
-        let message = v("message").isEmpty ? "Needs your attention" : v("message")
-        let cwd = v("cwd")
-        let w = Waiting(id: UUID().uuidString, subtitle: subtitle, message: message, cwd: cwd)
-
-        if !cwd.isEmpty { waiting.removeAll { $0.cwd == cwd } } // de-dupe by project
-        waiting.append(w)
-        postNotification(title: title, w: w)
-        DispatchQueue.main.async { self.rebuildMenu() }
+        switch comps.host {
+        case "notify":
+            let title = v("title").isEmpty ? "Claude Code" : v("title")
+            let message = v("message").isEmpty ? "Needs your attention" : v("message")
+            let cwd = v("cwd")
+            let w = Waiting(id: UUID().uuidString, subtitle: v("subtitle"),
+                            message: message, cwd: cwd, added: Date())
+            if !cwd.isEmpty { waiting.removeAll { $0.cwd == cwd } } // de-dupe by project
+            waiting.append(w)
+            postNotification(title: title, w: w)
+            DispatchQueue.main.async { self.rebuildMenu() }
+        case "clear":                       // a window is no longer waiting (user responded)
+            clearProject(cwd: v("cwd"))
+        case "clearall":
+            clearAllEntries()
+        default:
+            return
+        }
     }
 
     private func postNotification(title: String, w: Waiting) {
@@ -80,7 +99,7 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .list, .sound]) // show even if we're active; also land in Notification Center
+        completionHandler([.banner, .list, .sound])
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
@@ -115,8 +134,8 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
             }
         }
 
-        // Always bring VS Code to the front — this is the only action for a
-        // folder-less session, and a backstop otherwise.
+        // Always bring VS Code to the front — the only action for a folder-less
+        // session, and a backstop otherwise.
         if let vs = NSRunningApplication.runningApplications(withBundleIdentifier: vsID).first {
             vs.activate()
         } else if let appURL = ws.urlForApplication(withBundleIdentifier: vsID) {
@@ -124,7 +143,7 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
         }
     }
 
-    // MARK: - Menu
+    // MARK: - Menu actions
     @objc private func focusItem(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String,
               let w = waiting.first(where: { $0.id == id }) else { return }
@@ -132,11 +151,7 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
         remove(id: id)
     }
 
-    @objc private func clearAll() {
-        center.removeDeliveredNotifications(withIdentifiers: waiting.map { $0.id })
-        waiting.removeAll()
-        rebuildMenu()
-    }
+    @objc private func clearAll() { clearAllEntries() }
 
     @objc private func openNotificationSettings() {
         if let u = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
@@ -146,9 +161,34 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
 
     @objc private func quit() { NSApp.terminate(nil) }
 
+    // MARK: - Entry bookkeeping
     private func remove(id: String) {
         waiting.removeAll { $0.id == id }
         center.removeDeliveredNotifications(withIdentifiers: [id])
+        rebuildMenu()
+    }
+
+    private func clearProject(cwd: String) {
+        guard !cwd.isEmpty else { return }
+        let ids = waiting.filter { $0.cwd == cwd }.map { $0.id }
+        guard !ids.isEmpty else { return }
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+        waiting.removeAll { $0.cwd == cwd }
+        DispatchQueue.main.async { self.rebuildMenu() }
+    }
+
+    private func clearAllEntries() {
+        center.removeDeliveredNotifications(withIdentifiers: waiting.map { $0.id })
+        waiting.removeAll()
+        DispatchQueue.main.async { self.rebuildMenu() }
+    }
+
+    private func sweepStale() {
+        let cutoff = Date().addingTimeInterval(-staleAfter)
+        let stale = waiting.filter { $0.added < cutoff }
+        guard !stale.isEmpty else { return }
+        center.removeDeliveredNotifications(withIdentifiers: stale.map { $0.id })
+        waiting.removeAll { $0.added < cutoff }
         rebuildMenu()
     }
 
@@ -161,6 +201,7 @@ final class Controller: NSObject, NSApplicationDelegate, UNUserNotificationCente
         }
     }
 
+    // MARK: - Menu
     private func rebuildMenu() {
         let menu = NSMenu()
         let header = NSMenuItem(title: waiting.isEmpty ? "No Claude windows waiting" : "\(waiting.count) waiting",

@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# Build Nudge.app: generate icon, compile, assemble the bundle, and codesign.
+# Build Nudge.app: generate icon, compile, assemble, and codesign.
+# Builds in a NON-synced temp staging dir because the repo may live under an
+# iCloud-managed folder (Desktop/Documents), whose file provider stamps
+# com.apple.FinderInfo on the .app and breaks codesign. The pristine signed
+# bundle is left at $STAGE/Nudge.app for install.sh to ditto into /Applications.
 # Override the signing identity with:  SIGN_ID="Your Identity" ./build.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="Nudge.app"
-BUILD="build"
-rm -rf "$APP" "$BUILD"
-mkdir -p "$BUILD"
+STAGE="${TMPDIR:-/tmp}/nudge-stage"
+rm -rf "$STAGE"; mkdir -p "$STAGE"
+APP="$STAGE/Nudge.app"
 
 echo "==> icon"
-swiftc -O make-icon.swift -o "$BUILD/make-icon"
-"$BUILD/make-icon" "$BUILD/icon-1024.png"
-ICONSET="$BUILD/AppIcon.iconset"
-mkdir -p "$ICONSET"
+swiftc -O make-icon.swift -o "$STAGE/make-icon"
+"$STAGE/make-icon" "$STAGE/icon-1024.png"
+ICONSET="$STAGE/AppIcon.iconset"; mkdir -p "$ICONSET"
 for pair in \
   "icon_16x16:16" "icon_16x16@2x:32" \
   "icon_32x32:32" "icon_32x32@2x:64" \
@@ -21,29 +23,33 @@ for pair in \
   "icon_256x256:256" "icon_256x256@2x:512" \
   "icon_512x512:512" "icon_512x512@2x:1024"; do
   name="${pair%%:*}"; sz="${pair##*:}"
-  sips -z "$sz" "$sz" "$BUILD/icon-1024.png" --out "$ICONSET/$name.png" >/dev/null
+  sips -z "$sz" "$sz" "$STAGE/icon-1024.png" --out "$ICONSET/$name.png" >/dev/null
 done
-iconutil -c icns "$ICONSET" -o "$BUILD/AppIcon.icns"
+iconutil -c icns "$ICONSET" -o "$STAGE/AppIcon.icns"
 
 echo "==> compile"
 swiftc -O -swift-version 5 \
   -framework AppKit -framework UserNotifications \
-  Sources/main.swift -o "$BUILD/Nudge"
+  Sources/main.swift -o "$STAGE/Nudge"
 
 echo "==> assemble bundle"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BUILD/Nudge" "$APP/Contents/MacOS/Nudge"
+cp "$STAGE/Nudge" "$APP/Contents/MacOS/Nudge"
 cp Info.plist "$APP/Contents/Info.plist"
-cp "$BUILD/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$STAGE/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 echo "==> sign"
+xattr -cr "$APP" 2>/dev/null || true
 IDENTITY="${SIGN_ID:-}"
 if [ -z "$IDENTITY" ]; then
   IDENTITY=$(security find-identity -v -p codesigning | awk -F'"' '/LocalSign/{print $2; exit}')
 fi
 [ -z "$IDENTITY" ] && IDENTITY="-"
 codesign --force --sign "$IDENTITY" --timestamp=none "$APP"
-echo "Signed with: $IDENTITY"
-codesign -dv "$APP" 2>&1 | grep -E 'Identifier|Signature|Authority' || true
+codesign --verify --strict "$APP" && echo "signature verified ($IDENTITY)"
 
-echo "==> built $(pwd)/$APP"
+# Convenience copy for standalone testing (may be re-stamped on synced disks;
+# install.sh always uses the pristine staged copy below).
+rm -rf ./Nudge.app; ditto "$APP" ./Nudge.app 2>/dev/null || true
+
+echo "==> signed bundle staged at $APP"
